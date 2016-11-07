@@ -3,7 +3,6 @@ import ReactDOM from 'react-dom';
 import moment from 'moment';
 import cx from 'classnames';
 import Portal from 'react-portal';
-import includes from 'array-includes';
 
 import isTouchDevice from '../utils/isTouchDevice';
 import getResponsiveContainerStyles from '../utils/getResponsiveContainerStyles';
@@ -12,11 +11,9 @@ import toLocalizedDateString from '../utils/toLocalizedDateString';
 
 import isInclusivelyAfterDay from '../utils/isInclusivelyAfterDay';
 import isInclusivelyBeforeDay from '../utils/isInclusivelyBeforeDay';
-import isNextDay from '../utils/isNextDay';
-import isSameDay from '../utils/isSameDay';
 
 import DateRangePickerInput from './DateRangePickerInput';
-import DayPicker from './DayPicker';
+import DayPickerWithModifiers from './DayPickerWithModifiers';
 
 import CloseButton from '../svg/close.svg';
 
@@ -39,7 +36,6 @@ const defaultProps = {
   focusedInput: null,
   minimumNights: 1,
   isDayBlocked: () => false,
-  disabledDays: [],
   isOutsideRange: day => !isInclusivelyAfterDay(day, moment()),
   enableOutsideDays: false,
   numberOfMonths: 2,
@@ -77,15 +73,11 @@ export default class DateRangePicker extends React.Component {
     super(props);
     this.state = {
       dayPickerContainerStyles: {},
-      hoverDate: null,
     };
 
     this.isTouchDevice = isTouchDevice();
 
     this.onOutsideClick = this.onOutsideClick.bind(this);
-    this.onDayMouseEnter = this.onDayMouseEnter.bind(this);
-    this.onDayMouseLeave = this.onDayMouseLeave.bind(this);
-    this.onDayClick = this.onDayClick.bind(this);
 
     this.onClearFocus = this.onClearFocus.bind(this);
     this.onStartDateChange = this.onStartDateChange.bind(this);
@@ -108,56 +100,6 @@ export default class DateRangePicker extends React.Component {
 
   onClearFocus() {
     this.props.onFocusChange(null);
-  }
-
-  onDayClick(day, modifiers, e) {
-    const { keepOpenOnDateSelect, minimumNights } = this.props;
-    if (e) e.preventDefault();
-    if (includes(modifiers, 'blocked')) return;
-
-    const { focusedInput } = this.props;
-    let { startDate, endDate } = this.props;
-
-    if (focusedInput === START_DATE) {
-      this.props.onFocusChange(END_DATE);
-
-      startDate = day;
-
-      if (isInclusivelyAfterDay(day, endDate)) {
-        endDate = null;
-      }
-    } else if (focusedInput === END_DATE) {
-      const firstAllowedEndDate = startDate && startDate.clone().add(minimumNights, 'days');
-
-      if (!startDate) {
-        endDate = day;
-        this.props.onFocusChange(START_DATE);
-      } else if (isInclusivelyAfterDay(day, firstAllowedEndDate)) {
-        endDate = day;
-        if (!keepOpenOnDateSelect) this.props.onFocusChange(null);
-      } else {
-        startDate = day;
-        endDate = null;
-      }
-    }
-
-    this.props.onDatesChange({ startDate, endDate });
-  }
-
-  onDayMouseEnter(day) {
-    if (this.isTouchDevice) return;
-
-    this.setState({
-      hoverDate: day,
-    });
-  }
-
-  onDayMouseLeave() {
-    if (this.isTouchDevice) return;
-
-    this.setState({
-      hoverDate: null,
-    });
   }
 
   onEndDateChange(endDateString) {
@@ -247,7 +189,6 @@ export default class DateRangePicker extends React.Component {
       withFullScreenPortal,
       anchorDirection,
     } = this.props;
-    const { hoverDate } = this.state;
     const showDatepicker = focusedInput === START_DATE || focusedInput === END_DATE;
 
     const dayPickerClassName = cx('DateRangePicker__picker', {
@@ -259,7 +200,6 @@ export default class DateRangePicker extends React.Component {
       'DateRangePicker__picker--vertical': orientation === VERTICAL_ORIENTATION,
       'DateRangePicker__picker--portal': withPortal || withFullScreenPortal,
       'DateRangePicker__picker--full-screen-portal': withFullScreenPortal,
-      'DateRangePicker__picker--valid-date-hovered': hoverDate && !this.isBlocked(hoverDate),
     });
 
     return dayPickerClassName;
@@ -302,64 +242,6 @@ export default class DateRangePicker extends React.Component {
     });
   }
 
-  doesNotMeetMinimumNights(day) {
-    const { startDate, isOutsideRange, focusedInput, minimumNights } = this.props;
-    if (focusedInput !== END_DATE) return false;
-
-    if (startDate) {
-      const dayDiff = day.diff(startDate, 'days');
-      return dayDiff < minimumNights && dayDiff >= 0;
-    }
-    return isOutsideRange(moment(day).subtract(minimumNights, 'days'));
-  }
-
-  isDayAfterHoveredStartDate(day) {
-    const { startDate, endDate, minimumNights } = this.props;
-    const { hoverDate } = this.state;
-    return !!startDate && !endDate && isNextDay(hoverDate, day) && minimumNights > 0 &&
-      isSameDay(hoverDate, startDate);
-  }
-
-  isEndDate(day) {
-    return isSameDay(day, this.props.endDate);
-  }
-
-  isHovered(day) {
-    return isSameDay(day, this.state.hoverDate);
-  }
-
-  isInHoveredSpan(day) {
-    const { startDate, endDate } = this.props;
-    const { hoverDate } = this.state;
-
-    const isForwardRange = !!startDate && !endDate &&
-      (day.isBetween(startDate, hoverDate) ||
-       isSameDay(hoverDate, day));
-    const isBackwardRange = !!endDate && !startDate &&
-      (day.isBetween(hoverDate, endDate) ||
-       isSameDay(hoverDate, day));
-
-    return isForwardRange || isBackwardRange;
-  }
-
-  isInSelectedSpan(day) {
-    const { startDate, endDate } = this.props;
-    return day.isBetween(startDate, endDate);
-  }
-
-  isLastInRange(day) {
-    return this.isInSelectedSpan(day) && isNextDay(day, this.props.endDate);
-  }
-
-  isStartDate(day) {
-    return isSameDay(day, this.props.startDate);
-  }
-
-  isBlocked(day) {
-    const { isDayBlocked, isOutsideRange } = this.props;
-    return isDayBlocked(day) || isOutsideRange(day) || this.doesNotMeetMinimumNights(day);
-  }
-
   maybeRenderDayPickerWithPortal() {
     const { focusedInput, withPortal, withFullScreenPortal } = this.props;
 
@@ -385,33 +267,19 @@ export default class DateRangePicker extends React.Component {
       navNext,
       onPrevMonthClick,
       onNextMonthClick,
+      onDatesChange,
+      onFocusChange,
       withPortal,
       withFullScreenPortal,
       enableOutsideDays,
       initialVisibleMonth,
       focusedInput,
+      startDate,
+      endDate,
+      minimumNights,
+      keepOpenOnDateSelect,
     } = this.props;
     const { dayPickerContainerStyles } = this.state;
-
-    const modifiers = {
-      blocked: day => this.isBlocked(day),
-      'blocked-calendar': day => isDayBlocked(day),
-      'blocked-out-of-range': day => isOutsideRange(day),
-      'blocked-minimum-nights': day => this.doesNotMeetMinimumNights(day),
-      valid: day => !this.isBlocked(day),
-      // before anything has been set or after both are set
-      hovered: day => this.isHovered(day),
-
-      // while start date has been set, but end date has not been
-      'hovered-span': day => this.isInHoveredSpan(day),
-      'after-hovered-start': day => this.isDayAfterHoveredStartDate(day),
-      'last-in-range': day => this.isLastInRange(day),
-
-      // once a start date and end date have been set
-      'selected-start': day => this.isStartDate(day),
-      'selected-end': day => this.isEndDate(day),
-      'selected-span': day => this.isInSelectedSpan(day),
-    };
 
     const onOutsideClick = !withFullScreenPortal ? this.onOutsideClick : undefined;
 
@@ -421,11 +289,10 @@ export default class DateRangePicker extends React.Component {
         className={this.getDayPickerContainerClasses()}
         style={dayPickerContainerStyles}
       >
-        <DayPicker
+        <DayPickerWithModifiers
           ref={ref => { this.dayPicker = ref; }}
           orientation={orientation}
           enableOutsideDays={enableOutsideDays}
-          modifiers={modifiers}
           numberOfMonths={numberOfMonths}
           onDayMouseEnter={this.onDayMouseEnter}
           onDayMouseLeave={this.onDayMouseLeave}
@@ -433,6 +300,11 @@ export default class DateRangePicker extends React.Component {
           onDayTouchTap={this.onDayClick}
           onPrevMonthClick={onPrevMonthClick}
           onNextMonthClick={onNextMonthClick}
+          onDatesChange={onDatesChange}
+          onFocusChange={onFocusChange}
+          focusedInput={focusedInput}
+          startDate={startDate}
+          endDate={endDate}
           monthFormat={monthFormat}
           withPortal={withPortal || withFullScreenPortal}
           hidden={!focusedInput}
@@ -440,6 +312,10 @@ export default class DateRangePicker extends React.Component {
           onOutsideClick={onOutsideClick}
           navPrev={navPrev}
           navNext={navNext}
+          minimumNights={minimumNights}
+          isOutsideRange={isOutsideRange}
+          isDayBlocked={isDayBlocked}
+          keepOpenOnDateSelect={keepOpenOnDateSelect}
         />
 
         {withFullScreenPortal &&
